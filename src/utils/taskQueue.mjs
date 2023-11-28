@@ -22,7 +22,7 @@ export class TaskQueue {
     }
 
     tryExecuteTask(task) {
-        const worker = a.pop();
+        const worker = this.workerPool.pop();
         if (worker) {
             return new Promise((resolve, reject) => {
                 worker.postMessage(task);
@@ -39,6 +39,7 @@ export class TaskQueue {
         return null;
     }
 
+    // This method executes when any worker has completed his work
     async triggerWorker() {
         const worker = this.workerPool.pop();
         if (worker) {
@@ -59,9 +60,10 @@ export class TaskQueue {
         }
     }
 
-    async execute(uniqueId, count) {
+    async execute(count) {
         const task = count;
-        const taskAssigned = this.tryExecuteTask();
+        console.log(task);
+        const taskAssigned = this.tryExecuteTask(task);
         if (taskAssigned) {
             const result = await taskAssigned;
             if (this.taskQueue.length) {
