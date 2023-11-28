@@ -1,7 +1,6 @@
 import path from "node:path";
 import URL from "node:url";
-import {Worker} from "node:worker_threads";
-import {taskQueue} from "../index.mjs";
+import {WorkerWrapper} from "./workerWrapper.mjs";
 
 export class TaskQueue {
     constructor(poolSize, maxQueueSize) {
@@ -13,7 +12,19 @@ export class TaskQueue {
 
     initializeWorkerPool() {
         const workerPath = path.join(path.dirname(URL.fileURLToPath(import.meta.url)), 'cpuBound.mjs');
-        return Array.apply(null, Array(this.poolSize)).map(() => new Worker(workerPath));
+        const workers = Array.apply(null, Array(this.poolSize)).map(() => new WorkerWrapper(workerPath));
+        for (let i = 0; i < this.poolSize; i++) {
+            const worker = workers[i];
+            worker.on('taskdone', (msg) => {
+                this.workerPool.push(worker);
+                this.triggerWorker();
+            });
+            worker.on('error', (err) => {
+                this.workerPool.push(worker);
+                this.triggerWorker();
+            })
+        }
+        return workers;
     }
 
     // This method executes when any worker has completed his work
@@ -25,17 +36,7 @@ export class TaskQueue {
                 this.workerPool.push(worker);
                 return;
             }
-            worker.postMessage(task.count);
-            worker.once('message', (msg) => {
-                this.workerPool.push(worker);
-                task.resolve(msg);
-                this.triggerWorker();
-            });
-            worker.once('error', (err) => {
-                this.workerPool.push(worker);
-                task.reject(err);
-                this.triggerWorker();
-            });
+            worker.assignTask(task);
         }
     }
 
