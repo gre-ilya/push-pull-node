@@ -4,39 +4,16 @@ import {Worker} from "node:worker_threads";
 import {taskQueue} from "../index.mjs";
 
 export class TaskQueue {
-    constructor(poolSize) {
+    constructor(poolSize, maxQueueSize) {
         this.poolSize = poolSize;
         this.workerPool = this.initializeWorkerPool();
         this.taskQueue = [];
+        this.maxQueueSize = maxQueueSize;
     }
 
     initializeWorkerPool() {
         const workerPath = path.join(path.dirname(URL.fileURLToPath(import.meta.url)), 'cpuBound.mjs');
         return Array.apply(null, Array(this.poolSize)).map(() => new Worker(workerPath));
-    }
-
-    pushTaskToQueue(count) {
-        return new Promise((resolve, reject) => {
-            this.taskQueue.push({count, resolve, reject})
-        })
-    }
-
-    tryExecuteTask(task) {
-        const worker = this.workerPool.pop();
-        if (worker) {
-            return new Promise((resolve, reject) => {
-                worker.postMessage(task);
-                worker.on('message', (msg) => {
-                    this.workerPool.push(worker);
-                    resolve(msg);
-                });
-                worker.on('error', (err) => {
-                    this.workerPool.push(worker);
-                    reject(err);
-                });
-            });
-        }
-        return null;
     }
 
     // This method executes when any worker has completed his work
@@ -49,28 +26,28 @@ export class TaskQueue {
                 return;
             }
             worker.postMessage(task.count);
-            worker.on('message', (msg) => {
+            worker.once('message', (msg) => {
                 this.workerPool.push(worker);
-                task.resolve();
+                task.resolve(msg);
+                this.triggerWorker();
             });
-            worker.on('error', (err) => {
+            worker.once('error', (err) => {
                 this.workerPool.push(worker);
-                task.reject();
+                task.reject(err);
+                this.triggerWorker();
             });
         }
     }
 
     async execute(count) {
-        const task = count;
-        console.log(task);
-        const taskAssigned = this.tryExecuteTask(task);
-        if (taskAssigned) {
-            const result = await taskAssigned;
-            if (this.taskQueue.length) {
-                this.triggerWorker();
+        return new Promise((resolve, reject) => {
+            const task = {count, resolve, reject};
+            if (this.taskQueue.length > this.maxQueueSize) {
+                reject();
+                return;
             }
-            return result;
-        }
-        return this.pushTaskToQueue(task);
+            this.taskQueue.push(task);
+            this.triggerWorker();
+        })
     }
 }
