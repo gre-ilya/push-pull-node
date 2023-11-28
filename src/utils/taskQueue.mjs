@@ -44,7 +44,7 @@ export class TaskQueue {
         return new Promise((resolve, reject) => {
             const task = {count, resolve, reject};
             if (this.taskQueue.length > this.maxQueueSize) {
-                reject();
+                reject(new Error('Queue overflow'));
                 return;
             }
             this.taskQueue.push(task);
